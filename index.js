@@ -6,6 +6,7 @@ const cookieParser = require('cookie-parser')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const jwt = require('jsonwebtoken')
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY)
+const nodemailer = require('nodemailer');
 const port = process.env.PORT || 8000
 
 // 'https://user-email-password-24983.web.app', 'https://user-email-password-24983.firebaseapp.com'
@@ -20,6 +21,44 @@ app.use(cors(corsOptions))
 
 app.use(express.json())
 app.use(cookieParser())
+
+// send email
+const sendEmail = (emailAddress, emailData) => {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // Use `true` for port 465, `false` for all other ports
+    auth: {
+      user: process.env.TRANSPORTER_EMAIL,
+      pass: process.env.TRANSPORTER_PASS,
+    },
+  })
+
+  // verify transporter
+  // verify connection configuration
+  transporter.verify(function (error, success) {
+    if (error) {
+      console.log(error)
+    } else {
+      console.log('Server is ready to take our messages')
+    }
+  })
+  const mailBody = {
+    from: `"StayVista" <${process.env.TRANSPORTER_EMAIL}>`, // sender address
+    to: emailAddress, // list of receivers
+    subject: emailData.subject, // Subject line
+    html: emailData.message, // html body
+  }
+
+  transporter.sendMail(mailBody, (error, info) => {
+    if (error) {
+      console.log(error)
+    } else {
+      console.log('Email Sent: ' + info.response)
+    }
+  })
+}
 
 // Verify Token Middleware
 const verifyToken = async (req, res, next) => {
@@ -54,6 +93,34 @@ async function run() {
     const contestsCollection = client.db('ContestCreation').collection('contest');
     const bookingsCollection = client.db('ContestCreation').collection('booking');
 
+    // verify admin middleware
+    const verifyAdmin = async (req, res, next) => {
+      console.log('hello')
+      const user = req.user
+      const query = { email: user?.email }
+      const result = await usersCollection.findOne(query)
+      console.log(result?.role)
+      if (!result || result?.role !== 'admin')
+        return res.status(401).send({ message: 'unauthorized access!!' })
+
+      next()
+    }
+
+    // verify creator middleware
+    const verifyHost = async (req, res, next) => {
+      console.log('hello')
+      const user = req.user
+      const query = { email: user?.email }
+      const result = await usersCollection.findOne(query)
+      console.log(result?.role)
+      if (!result || result?.role !== 'creator') {
+        return res.status(401).send({ message: 'unauthorized access!!' })
+      }
+
+      next()
+    }
+
+
 
     // auth related api
     app.post('/jwt', async (req, res) => {
@@ -87,7 +154,7 @@ async function run() {
 
 
     // create-payment-intent
-    app.post('/create-payment-intent', async (req, res) => {
+    app.post('/create-payment-intent',verifyToken, async (req, res) => {
       const price = req.body.price
       const priceInCent = parseFloat(price) * 100
       if (!price || priceInCent < 1) return
@@ -147,7 +214,7 @@ async function run() {
     })
 
     // get all users data from db
-    app.get('/users', async (req, res) => {
+    app.get('/users',verifyToken, async (req, res) => {
       const result = await usersCollection.find().toArray()
       res.send(result)
     })
@@ -175,14 +242,14 @@ async function run() {
     })
 
     // Save a contest data in db
-    app.post('/contest', async (req, res) => {
+    app.post('/contest',verifyToken, verifyHost,  async (req, res) => {
       const contestData = req.body
       const result = await contestsCollection.insertOne(contestData)
       res.send(result)
     })
 
     // get all contests for host
-    app.get('/my-contest/:email', async (req, res) => {
+    app.get('/my-contest/:email',verifyToken, verifyHost,  async (req, res) => {
       const email = req.params.email
 
       let query = { 'host.email': email }
@@ -192,7 +259,7 @@ async function run() {
     )
 
     // delete a contest
-    app.delete('/contest/:id', async (req, res) => {
+    app.delete('/contest/:id',verifyToken, verifyHost,  async (req, res) => {
       const id = req.params.id
       const query = { _id: new ObjectId(id) }
       const result = await contestsCollection.deleteOne(query)
@@ -213,21 +280,21 @@ async function run() {
       // save room booking info
       const result = await bookingsCollection.insertOne(bookingData)
       // send email to guest
-      // sendEmail(bookingData?.guest?.email, {
-      //   subject: 'Booking Successful!',
-      //   message: `You've successfully booked a room through StayVista. Transaction Id: ${bookingData.transactionId}`,
-      // })
+      sendEmail(bookingData?.guest?.email, {
+        subject: 'Enrolled Successful!',
+        message: `You've successfully Enrolled a game through contest. Transaction Id: ${bookingData.transactionId}`,
+      })
       // send email to host
-      // sendEmail(bookingData?.host?.email, {
-      //   subject: 'Your room got booked!',
-      //   message: `Get ready to welcome ${bookingData.guest.name}.`,
-      // })
+      sendEmail(bookingData?.host?.email, {
+        subject: 'Your game got Enrolled!',
+        message: `Get ready to welcome ${bookingData.guest.name}.`,
+      })
 
       res.send(result)
     })
 
     // update room data
-    // app.put('/room/update/:id', async (req, res) => {
+    // app.put('/room/update/:id',verifyToken, verifyHost,  async (req, res) => {
     //   const id = req.params.id
     //   const roomData = req.body
     //   const query = { _id: new ObjectId(id) }

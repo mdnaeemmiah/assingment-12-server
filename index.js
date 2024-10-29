@@ -294,16 +294,16 @@ async function run() {
     })
 
     // update room data
-    // app.put('/room/update/:id',verifyToken, verifyHost,  async (req, res) => {
-    //   const id = req.params.id
-    //   const roomData = req.body
-    //   const query = { _id: new ObjectId(id) }
-    //   const updateDoc = {
-    //     $set: roomData,
-    //   }
-    //   const result = await roomsCollection.updateOne(query, updateDoc)
-    //   res.send(result)
-    // })
+    app.put('/room/update/:id',verifyToken, verifyHost,  async (req, res) => {
+      const id = req.params.id
+      const roomData = req.body
+      const query = { _id: new ObjectId(id) }
+      const updateDoc = {
+        $set: roomData,
+      }
+      const result = await contestsCollection.updateOne(query, updateDoc)
+      res.send(result)
+    })
 
     // get all booking for a guest
     app.get('/my-contests/:email', verifyToken, async (req, res) => {
